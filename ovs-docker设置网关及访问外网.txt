@@ -1,0 +1,41 @@
+https://www.jianshu.com/p/0237e9fec8ea
+
+ovs-docker设置网关及访问外网
+ iptables -t nat -F
+
+ ovs-vsctl add-br br0
+ ifconfig br0 192.168.1.250/24
+
+ # 创建一个network namespace ns1,创建一对veth0和veth1,将veth0加入到br0中，将veth1加入到ns1中，并且给ns1配置ip为192.168.1.1/24
+
+ # 创建一对 network namespace ns1
+ ip link add veth0 type veth peer name veth1
+
+ # 将veth0加入到br0中
+ ip link set veth0 up
+ ovs-vsctl add-port br0 veth0
+
+ # 将veth1加入到ns1中
+  ip netns exec ns1 ip addr add 192.168.1.1/24 dev veth1
+  ip netns exec ns1 ip link set veth1 up
+  ip netns exec ns1 ip link set lo up
+
+  # 给ns1 增加路由
+  ip netns exec ns1 route add default gw 192.168.1.250
+  ip netns exec ns1 ping -c 1 172.19.0.12
+
+  # 打开ip_forward功能和加iptables规则
+  echo 1 > /proc/sys/net/ipv4/ip_forward
+  iptables -t nat -A POSTROUTING -s 192.168.1.0/24 -o eth0 -j MASQUERADE
+  ip netns exec ns1 ping -c 1 www.baidu.com
+
+  # ovs-docker
+  docker run -d --name con1 --net=none busybox top
+  docker exec -it con1 ifconfig
+
+  # 此时利用ovs-docker 设置此容器ip地址为192.168.1.2/24  网关为192.168.1.250
+  ovs-docker add-port br0 eth0 con1 --ipaddress=192.168.1.2/24 --gateway=192.168.1.250
+
+  # 测试
+  docker exec -it con1 ping -c 1 192.168.1.250
+  docker exec -it con1 ping -c 1 192.168.1.1
